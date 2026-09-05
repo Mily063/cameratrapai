@@ -1,3 +1,32 @@
+> **Fork note — what we changed**
+>
+> This repository is a fork of [google/cameratrapai](https://github.com/google/cameratrapai) (SpeciesNet) incorporating three enhancements proposed in upstream [PR #78](https://github.com/google/cameratrapai/pull/78).
+>
+> ### What this fork adds
+>
+> - **Multi-crop classification per detection**: In upstream SpeciesNet, only a single crop (or the full image) is classified, producing a single image-level prediction. This fork updates `SpeciesNetClassifier.preprocess()` to extract crops for all detected bounding boxes (`bboxes`) and batches crops across images in `batch_predict()`. The output schema changes to support per-detection predictions: top-level `result["classifications"]` is replaced with nested classifications under each detection (`result["detections"][i]["classifications"]`), and `SpeciesNetEnsemble` assigns predictions, confidence scores, and prediction sources individually to each detection (`result["detections"][i]["prediction"]`, `result["detections"][i]["prediction_score"]`, `result["detections"][i]["prediction_source"]`).
+> - **Configurable object filtering (`size_threshold`, `human_conf_threshold`, `max_objects`)**: Adds filtering parameters to `SpeciesNetDetector` exposed via CLI flags `--size_threshold`, `--human_conf_threshold`, and `--max_objects`. Bounding boxes with a relative area (`width * height`) below `size_threshold` are filtered out. Human detections (`category == "2"` or `label == "human"`) bypass this size filter if detector confidence satisfies `conf >= human_conf_threshold`, ensuring small or distant humans are preserved. Surviving detections are sorted descending by relative area and capped to `max_objects`. In `SpeciesNetEnsemble`, human detections above the threshold are directly classified as human from the detector.
+> - **Bayesian Monte Carlo (MC) Dropout (`--mc_dropout_passes`)**: Adds the `--mc_dropout_passes` CLI flag for epistemic uncertainty estimation. When set to `> 1`, dropout layers remain active during inference (`m.train()`). For Torch FX `GraphModule` models (where dropout nodes were stripped during export), it performs FX graph surgery to dynamically insert an `F.dropout(p=0.2, training=True)` node immediately before the dense layer (`SpeciesNet/dense/MatMul`) and recompiles the graph. In `batch_predict()`, inference executes multiple stochastic forward passes and averages the post-softmax probability distributions (`torch.stack(all_scores).mean(dim=0)`) to compute well-calibrated confidence scores.
+>
+> ### Status
+>
+> Proposed in [PR #78](https://github.com/google/cameratrapai/pull/78) and closed without merge by collaborator [@agentmorris](https://github.com/agentmorris). Maintainer feedback cited the following reasons:
+> - **PR Scope**: The PR bundled too many unrelated changes together into a single submission.
+> - **Threshold placement**: Detection confidence and bounding box size filtering are better handled in post-processing rather than built into core inference APIs.
+> - **MC Dropout maintainability**: MC Dropout was not requested by users and introduces maintenance burden across future model versions.
+> - **Concurrent multi-box effort**: Multi-box inference is being developed independently in [PR #73](https://github.com/google/cameratrapai/pull/73) with a different output schema designed to handle conceptual changes to multi-species representation.
+> - **Contributor License Agreement**: The Google CLA check was not signed.
+>
+> ### What I took from the review
+>
+> I learned three key lessons from this review: First, a pull request should strictly follow the single-responsibility principle — bundling multiple distinct features made this PR impractical to review and merge incrementally. Second, configuration parameters like size and confidence thresholds belong in user-side post-processing pipelines rather than the core model API. Lastly, introducing unrequested features like MC Dropout creates technical debt and maintenance fragility that maintainers are rightfully cautious about adopting.
+>
+> ### Attribution
+>
+> Two of the three commits were authored by me (Miłosz Gibała: multi-crop inference, object filtering, and MC Dropout), and the commit bypassing the size threshold for human detections was authored by MichWnek ([@MichWnek](https://github.com/MichWnek)).
+
+---
+
 # SpeciesNet
 
 An ensemble of AI models for classifying wildlife in camera trap images.
